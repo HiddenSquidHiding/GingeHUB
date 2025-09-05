@@ -1,7 +1,7 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local BASE_URL = "https://raw.githubusercontent.com/HiddenSquidHiding/GingeHUB/main/"
+local BASE_URL = "https://raw.githubusercontent.com/HiddenSquidHiding/GingeHUB/main/src/"
 
 local modules = {
     "AutoLevel",
@@ -41,4 +41,5 @@ for _, modName in ipairs(modules) do
 end
 
 local mainCode = HttpService:GetAsync(BASE_URL .. "Main.client.lua")
+
 loadstring(mainCode)()
