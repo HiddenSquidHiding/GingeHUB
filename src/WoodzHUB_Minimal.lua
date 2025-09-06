@@ -1,5 +1,5 @@
--- WoodzHUB_Minimal_Farm_Full.lua
--- Script with full Farm module to enable enemy targeting and teleportation
+-- WoodzHUB_Minimal_Farm_SimplifiedFull.lua
+-- Simplified full Farm module to debug 'attempt to call a nil value' error
 
 local function debugPrint(msg)
     print("[WoodzHUB Debug] " .. tostring(msg))
@@ -292,7 +292,7 @@ Modules.UI = (function()
     return UI
 end)()
 
--- Farm.lua (Full)
+-- Farm.lua (Simplified Full)
 Modules.Farm = (function()
     debugPrint("Defining Farm module")
     local Farm = {}
@@ -336,49 +336,19 @@ Modules.Farm = (function()
         local Utils, Remotes = deps.Utils, deps.Remotes
         Remotes.setAutoAttack(ctx, true)
         while running do
-            local player = ctx.services.Players.LocalPlayer
-            if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
-                or not player.Character:FindFirstChild("Humanoid")
-                or player.Character.Humanoid.Health <= 0 then
-                Utils.waitForCharacter(player)
-            end
             local enemies = refreshEnemyList(ctx)
             if #enemies == 0 then
                 debugPrint("No enemies found")
                 Utils.notify("WoodzHUB", "No enemies found", 3)
-                task.wait(0.5)
-                goto continue
-            end
-            for _, enemy in ipairs(enemies) do
-                if not running then break end
-                if not enemy or not enemy.Parent then goto continue end
-                local hum = enemy:FindFirstChildOfClass("Humanoid")
-                if not hum or hum.Health <= 0 then goto continue end
-                debugPrint("Targeting enemy: " .. enemy.Name)
-                local part = Utils.findBasePart(enemy)
-                local targetCF = part and (part.CFrame * CFrame.new(0, 0, 5)) or (enemy:GetModelCFrame() * CFrame.new(0, 0, 5))
-                if not Utils.isValidCFrame(targetCF) then
-                    debugPrint("Invalid CFrame for enemy: " .. enemy.Name)
-                    goto continue
+            else
+                debugPrint("Found " .. #enemies .. " enemies")
+                local enemyNames = {}
+                for _, enemy in ipairs(enemies) do
+                    table.insert(enemyNames, enemy.Name)
                 end
-                local okTeleport = pcall(function()
-                    player.Character.HumanoidRootPart.CFrame = targetCF
-                end)
-                if okTeleport then
-                    debugPrint("Teleported to enemy: " .. enemy.Name)
-                    Utils.notify("WoodzHUB", "Teleported to " .. enemy.Name, 3)
-                    local start = tick()
-                    while running and enemy.Parent and hum and hum.Health > 0 and (tick() - start) < 30 do
-                        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then hrp.CFrame = targetCF end
-                        task.wait(0.6)
-                    end
-                end
-                task.wait(0.25)
-                ::continue::
+                Utils.notify("WoodzHUB", "Found " .. #enemies .. " enemies: " .. table.concat(enemyNames, ", "), 5)
             end
-            ::continue::
-            task.wait(0.5)
+            task.wait(1)
         end
         Remotes.setAutoAttack(ctx, false)
         debugPrint("Farm.loop stopped")
@@ -442,87 +412,3 @@ Modules.Hub = (function()
         }
         local Utils = Modules.Utils
         if not Utils then
-            debugPrint("Utils module is nil in Hub.start")
-            return
-        end
-        Utils.init(ctx)
-        local deps = { Utils = Utils, Remotes = Modules.Remotes }
-        local UI = Modules.UI
-        if not UI then
-            debugPrint("UI module is nil in Hub.start")
-            return
-        end
-        local Remotes = Modules.Remotes
-        if not Remotes then
-            debugPrint("Remotes module is nil in Hub.start")
-            return
-        end
-        local Farm = Modules.Farm
-        if not Farm then
-            debugPrint("Farm module is nil in Hub.start")
-            return
-        end
-        Remotes.init(ctx)
-        debugPrint("Calling Farm.init")
-        Farm.init(ctx, nil, deps)
-        local ui = UI.mount(ctx, deps)
-        if not ui then
-            debugPrint("UI.mount failed")
-            return
-        end
-        ui.onTestToggle.Event:Connect(function()
-            debugPrint("Test toggle fired")
-            Utils.notify("WoodzHUB", "Test button clicked!", 3)
-        end)
-        ui.onRebirth.Event:Connect(function()
-            debugPrint("Rebirth toggle fired")
-            local success = Remotes.rebirth(ctx)
-            Utils.notify("WoodzHUB", success and "Rebirth fired successfully" or "Rebirth failed (no remote?)", 3)
-        end)
-        ui.onAutoFarmToggle.Event:Connect(function(on)
-            debugPrint("AutoFarm toggle fired: " .. tostring(on))
-            if on then
-                debugPrint("Starting Farm from toggle")
-                Farm.start()
-                Utils.notify("WoodzHUB", "Auto-Farm enabled", 3)
-            else
-                debugPrint("Stopping Farm from toggle")
-                Farm.stop()
-                Utils.notify("WoodzHUB", "Auto-Farm disabled", 3)
-            end
-        end)
-        Utils.notify("WoodzHUB", "Hub, Utils, UI, Remotes, and Farm loaded successfully", 5)
-        debugPrint("Hub initialized with Utils, UI, Remotes, and Farm")
-    end
-    debugPrint("Hub module defined")
-    return Hub
-end)()
-
-debugPrint("Modules table created")
-
--- Entry point with extra debugging
-debugPrint("Checking Modules table")
-if not Modules then
-    debugPrint("Modules table is nil")
-    return
-end
-debugPrint("Checking Hub module")
-if not Modules.Hub then
-    debugPrint("Hub module is nil")
-    return
-end
-debugPrint("Checking Hub.start function")
-if not Modules.Hub.start then
-    debugPrint("Hub.start function is nil")
-    return
-end
-debugPrint("Starting Hub")
-local success, err = pcall(function()
-    debugPrint("Executing Hub.start")
-    Modules.Hub.start()
-end)
-if success then
-    debugPrint("Hub.start executed successfully")
-else
-    debugPrint("Error in Hub.start: " .. tostring(err))
-end
