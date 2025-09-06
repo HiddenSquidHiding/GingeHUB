@@ -1,5 +1,5 @@
 -- WoodzHUB_Combined.lua
--- Combined script for Delta Executor to avoid HTTP restrictions
+-- Combined script for Delta Executor with debug and error handling
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -10,6 +10,11 @@ WoodzHUB.Parent = ReplicatedStorage
 
 -- Module store
 local Modules = {}
+
+-- Debug function
+local function debugPrint(msg)
+    print("[WoodzHUB Debug] " .. tostring(msg))
+end
 
 -- Utils.lua
 Modules.Utils = (function()
@@ -34,18 +39,21 @@ Modules.Utils = (function()
     end
     function Utils.notify(title, content, duration)
         local Players = game:GetService("Players")
-        local player  = Players.LocalPlayer
-        local PlayerGui = player:WaitForChild("PlayerGui")
+        local player = Players.LocalPlayer
+        if not player then debugPrint("No LocalPlayer for notify") return end
+        local PlayerGui = player:WaitForChild("PlayerGui", 5)
+        if not PlayerGui then debugPrint("PlayerGui not found") return end
         local COLOR_BG_DARK = Color3.fromRGB(30, 30, 30)
         local COLOR_BG_MED  = Color3.fromRGB(50, 50, 50)
         local COLOR_WHITE   = Color3.fromRGB(255, 255, 255)
-        local gui  = Utils.new("ScreenGui", { ResetOnSpawn=false, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=2000000000 }, PlayerGui)
-        local frame= Utils.new("Frame", { Size=UDim2.new(0,300,0,100), Position=UDim2.new(1,-310,0,10), BackgroundColor3=COLOR_BG_DARK }, gui)
+        local gui = Utils.new("ScreenGui", { ResetOnSpawn=false, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=2000000000 }, PlayerGui)
+        local frame = Utils.new("Frame", { Size=UDim2.new(0,300,0,100), Position=UDim2.new(1,-310,0,10), BackgroundColor3=COLOR_BG_DARK }, gui)
         Utils.new("TextLabel", { Size=UDim2.new(1,0,0,30), BackgroundColor3=COLOR_BG_MED, TextColor3=COLOR_WHITE, Text=title, TextSize=14, Font=Enum.Font.SourceSansBold }, frame)
         Utils.new("TextLabel", { Size=UDim2.new(1,-10,0,60), Position=UDim2.new(0,5,0,35), BackgroundTransparency=1, TextColor3=COLOR_WHITE, Text=content, TextWrapped=true, TextSize=14, Font=Enum.Font.SourceSans }, frame)
         task.spawn(function() task.wait(duration or 5) gui:Destroy() end)
     end
     function Utils.waitForCharacter(player)
+        if not player then return end
         while not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or not player.Character:FindFirstChild("Humanoid") do
             player.CharacterAdded:Wait()
             task.wait(0.1)
@@ -104,6 +112,7 @@ Modules.Utils = (function()
             end
         end)
     end
+    debugPrint("Utils module loaded")
     return Utils
 end)()
 
@@ -112,10 +121,11 @@ Modules.Remotes = (function()
     local Remotes = {}
     function Remotes.init(ctx)
         ctx.state.autoAttackRemote = nil
-        ctx.state.rebirthRemote    = nil
+        ctx.state.rebirthRemote = nil
         for _, d in ipairs(ctx.services.ReplicatedStorage:GetDescendants()) do
             if d:IsA("RemoteFunction") and d.Name:lower() == "autoattack" then
                 ctx.state.autoAttackRemote = d
+                debugPrint("Found autoAttackRemote: " .. d.Name)
                 break
             end
         end
@@ -123,22 +133,24 @@ Modules.Remotes = (function()
             local n = d.Name:lower()
             if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and (n:find("rebirth") or n:find("servercontrol") or n:find("bosszoneremote")) then
                 ctx.state.rebirthRemote = d
+                debugPrint("Found rebirthRemote: " .. d.Name)
                 break
             end
         end
     end
     function Remotes.setAutoAttack(ctx, enabled)
         local rf = ctx.state.autoAttackRemote
-        if not rf then return end
+        if not rf then debugPrint("No autoAttackRemote found") return end
         pcall(function() rf:InvokeServer(enabled and true or false) end)
     end
     function Remotes.rebirth(ctx)
         local r = ctx.state.rebirthRemote
-        if not r then return end
+        if not r then debugPrint("No rebirthRemote found") return end
         pcall(function()
             if r:IsA("RemoteEvent") then r:FireServer() else r:InvokeServer() end
         end)
     end
+    debugPrint("Remotes module loaded")
     return Remotes
 end)()
 
@@ -148,8 +160,10 @@ Modules.UI = (function()
     function UI.mount(ctx, deps)
         local Utils = deps.Utils
         local Players = ctx.services.Players
-        local player  = Players.LocalPlayer
-        local PlayerGui = player:WaitForChild("PlayerGui")
+        local player = Players.LocalPlayer
+        if not player then debugPrint("No LocalPlayer for UI") return end
+        local PlayerGui = player:WaitForChild("PlayerGui", 5)
+        if not PlayerGui then debugPrint("PlayerGui not found") return end
         local C = ctx.constants
         local ScreenGui = Utils.new("ScreenGui", {
             Name="WoodzHUB",
@@ -164,10 +178,10 @@ Modules.UI = (function()
             TextColor3=C.COLOR_WHITE, TextSize=14, Font=Enum.Font.SourceSansBold
         }, Main)
         local Tabs = Utils.new("Frame", { Size=UDim2.new(1,0,0,30), Position=UDim2.new(0,0,0,50), BackgroundColor3=C.COLOR_BG }, Main)
-        local MainTabBtn  = Utils.new("TextButton", { Size=UDim2.new(0.5,0,1,0), Text="Main", TextColor3=C.COLOR_WHITE, BackgroundColor3=C.COLOR_BTN }, Tabs)
-        local OptTabBtn   = Utils.new("TextButton", { Size=UDim2.new(0.5,0,1,0), Position=UDim2.new(0.5,0,0,0), Text="Options", TextColor3=C.COLOR_WHITE, BackgroundColor3=C.COLOR_BG }, Tabs)
+        local MainTabBtn = Utils.new("TextButton", { Size=UDim2.new(0.5,0,1,0), Text="Main", TextColor3=C.COLOR_WHITE, BackgroundColor3=C.COLOR_BTN }, Tabs)
+        local OptTabBtn = Utils.new("TextButton", { Size=UDim2.new(0.5,0,1,0), Position=UDim2.new(0.5,0,0,0), Text="Options", TextColor3=C.COLOR_WHITE, BackgroundColor3=C.COLOR_BG }, Tabs)
         local MainTab = Utils.new("Frame", { Size=UDim2.new(1,0,1,-80), Position=UDim2.new(0,0,0,80), BackgroundTransparency=1 }, Main)
-        local OptTab  = Utils.new("Frame", { Size=UDim2.new(1,0,1,-80), Position=UDim2.new(0,0,0,80), BackgroundTransparency=1, Visible=false }, Main)
+        local OptTab = Utils.new("Frame", { Size=UDim2.new(1,0,1,-80), Position=UDim2.new(0,0,0,80), BackgroundTransparency=1, Visible=false }, Main)
         local function showMain()
             MainTab.Visible, OptTab.Visible = true, false
             MainTabBtn.BackgroundColor3, OptTabBtn.BackgroundColor3 = C.COLOR_BTN, C.COLOR_BG
@@ -178,23 +192,23 @@ Modules.UI = (function()
         end
         MainTabBtn.MouseButton1Click:Connect(showMain)
         OptTabBtn.MouseButton1Click:Connect(showOpts)
-        local AutoFarmBtn   = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,10), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto-Farm: OFF" }, MainTab)
-        local RebirthBtn    = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,50), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto-Rebirth" }, MainTab)
-        local AutoLevelBtn  = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,90), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Farm - Auto Level: OFF" }, MainTab)
-        local TargetLabel   = Utils.new("TextLabel", {
+        local AutoFarmBtn = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,10), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto-Farm: OFF" }, MainTab)
+        local RebirthBtn = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,50), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto-Rebirth" }, MainTab)
+        local AutoLevelBtn = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,90), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Farm - Auto Level: OFF" }, MainTab)
+        local TargetLabel = Utils.new("TextLabel", {
             Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,130), BackgroundColor3=C.COLOR_BG_MED,
             TextColor3=C.COLOR_WHITE, Text="Current Target: None", TextSize=14, Font=Enum.Font.SourceSans
         }, MainTab)
         ctx.state.currentTargetLabel = TargetLabel
-        local AutoCratesBtn   = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,10),  BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Open Crates: OFF" }, OptTab)
-        local Merchant1Btn    = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,50),  BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Buy Mythics (Chicleteiramania): OFF" }, OptTab)
-        local Merchant2Btn    = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,90),  BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Buy Mythics (Bombardino Sewer): OFF" }, OptTab)
-        local onAutoFarmToggle    = Instance.new("BindableEvent")
-        local onAutoLevelToggle   = Instance.new("BindableEvent")
-        local onRebirth           = Instance.new("BindableEvent")
-        local onAutoCratesToggle  = Instance.new("BindableEvent")
-        local onMerchant1Toggle   = Instance.new("BindableEvent")
-        local onMerchant2Toggle   = Instance.new("BindableEvent")
+        local AutoCratesBtn = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,10), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Open Crates: OFF" }, OptTab)
+        local Merchant1Btn = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,50), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Buy Mythics (Chicleteiramania): OFF" }, OptTab)
+        local Merchant2Btn = Utils.new("TextButton", { Size=UDim2.new(1,-20,0,30), Position=UDim2.new(0,10,0,90), BackgroundColor3=C.COLOR_BTN, TextColor3=C.COLOR_WHITE, Text="Auto Buy Mythics (Bombardino Sewer): OFF" }, OptTab)
+        local onAutoFarmToggle = Instance.new("BindableEvent")
+        local onAutoLevelToggle = Instance.new("BindableEvent")
+        local onRebirth = Instance.new("BindableEvent")
+        local onAutoCratesToggle = Instance.new("BindableEvent")
+        local onMerchant1Toggle = Instance.new("BindableEvent")
+        local onMerchant2Toggle = Instance.new("BindableEvent")
         AutoFarmBtn.MouseButton1Click:Connect(function()
             ctx.state.autoFarmEnabled = not ctx.state.autoFarmEnabled
             AutoFarmBtn.Text = "Auto-Farm: " .. (ctx.state.autoFarmEnabled and "ON" or "OFF")
@@ -228,19 +242,20 @@ Modules.UI = (function()
             Merchant2Btn.BackgroundColor3 = on and C.COLOR_BTN_ACTIVE or C.COLOR_BTN
             onMerchant2Toggle:Fire(on)
         end)
+        debugPrint("UI mounted")
         return {
             refs = {
-                TargetLabel   = TargetLabel,
+                TargetLabel = TargetLabel,
                 AutoCratesBtn = AutoCratesBtn,
-                Merchant1Btn  = Merchant1Btn,
-                Merchant2Btn  = Merchant2Btn,
+                Merchant1Btn = Merchant1Btn,
+                Merchant2Btn = Merchant2Btn,
             },
-            onAutoFarmToggle   = onAutoFarmToggle,
-            onAutoLevelToggle  = onAutoLevelToggle,
-            onRebirth          = onRebirth,
+            onAutoFarmToggle = onAutoFarmToggle,
+            onAutoLevelToggle = onAutoLevelToggle,
+            onRebirth = onRebirth,
             onAutoCratesToggle = onAutoCratesToggle,
-            onMerchant1Toggle  = onMerchant1Toggle,
-            onMerchant2Toggle  = onMerchant2Toggle,
+            onMerchant1Toggle = onMerchant1Toggle,
+            onMerchant2Toggle = onMerchant2Toggle,
             setAutoFarm = function(on)
                 ctx.state.autoFarmEnabled = on
                 AutoFarmBtn.Text = "Auto-Farm: " .. (on and "ON" or "OFF")
@@ -265,6 +280,7 @@ Modules.UI = (function()
             end,
         }
     end
+    debugPrint("UI module loaded")
     return UI
 end)()
 
@@ -321,11 +337,16 @@ Modules.Crates = (function()
         end
     end
     local function sniffCrateEvents(ctx)
-        local pkg  = ctx.services.ReplicatedStorage:WaitForChild("Packages")
-        local knit = pkg:WaitForChild("Knit")
-        local svcs = knit:WaitForChild("Services")
-        local svc  = svcs:WaitForChild("CratesService")
-        local RE   = svc:WaitForChild("RE")
+        local pkg = ctx.services.ReplicatedStorage:FindFirstChild("Packages")
+        if not pkg then debugPrint("Packages not found for Crates") return end
+        local knit = pkg:FindFirstChild("Knit")
+        if not knit then debugPrint("Knit not found for Crates") return end
+        local svcs = knit:FindFirstChild("Services")
+        if not svcs then debugPrint("Services not found for Crates") return end
+        local svc = svcs:FindFirstChild("CratesService")
+        if not svc then debugPrint("CratesService not found") return end
+        local RE = svc:FindFirstChild("RE")
+        if not RE then debugPrint("RE not found for Crates") return end
         for _, ch in ipairs(RE:GetChildren()) do
             if ch:IsA("RemoteEvent") then
                 ch.OnClientEvent:Connect(function(...) dumpCrateEvent(ch.Name, ...) end)
@@ -337,19 +358,27 @@ Modules.Crates = (function()
             end
         end)
         cratesRE_UnlockFinish = RE:FindFirstChild("UnlockCratesFinished")
+        debugPrint("Crates events sniffed")
     end
     local function getCratesUseRF(ctx)
         if cratesRF_Use and cratesRF_Use.Parent then return cratesRF_Use end
-        local pkg  = ctx.services.ReplicatedStorage:FindFirstChild("Packages") or ctx.services.ReplicatedStorage:WaitForChild("Packages")
-        local knit = pkg:FindFirstChild("Knit") or pkg:WaitForChild("Knit")
-        local svcs = knit:FindFirstChild("Services") or knit:WaitForChild("Services")
-        local svc  = svcs:FindFirstChild("CratesService") or svcs:WaitForChild("CratesService")
-        local RF   = svc:FindFirstChild("RF") or svc:WaitForChild("RF")
-        local rf   = RF:FindFirstChild("UseCrateItem") or RF:WaitForChild("UseCrateItem")
+        local pkg = ctx.services.ReplicatedStorage:FindFirstChild("Packages")
+        if not pkg then debugPrint("Packages not found for Crates RF") return nil end
+        local knit = pkg:FindFirstChild("Knit")
+        if not knit then debugPrint("Knit not found for Crates RF") return nil end
+        local svcs = knit:FindFirstChild("Services")
+        if not svcs then debugPrint("Services not found for Crates RF") return nil end
+        local svc = svcs:FindFirstChild("CratesService")
+        if not svc then debugPrint("CratesService not found for RF") return nil end
+        local RF = svc:FindFirstChild("RF")
+        if not RF then debugPrint("RF not found for Crates") return nil end
+        local rf = RF:FindFirstChild("UseCrateItem")
         if rf and rf:IsA("RemoteFunction") then
             cratesRF_Use = rf
+            debugPrint("Found UseCrateItem RF")
             return rf
         end
+        debugPrint("UseCrateItem RF not found")
         return nil
     end
     local function addCrateCount(map, name, count)
@@ -387,9 +416,11 @@ Modules.Crates = (function()
     local function collectInventoryRFs(ctx)
         local rfs = {}
         local packages = ctx.services.ReplicatedStorage:FindFirstChild("Packages")
-        if not packages then return rfs end
-        local knit = packages:FindFirstChild("Knit"); if not knit then return rfs end
-        local services = knit:FindFirstChild("Services"); if not services then return rfs end
+        if not packages then debugPrint("Packages not found for inventory RFs") return rfs end
+        local knit = packages:FindFirstChild("Knit")
+        if not knit then debugPrint("Knit not found for inventory RFs") return rfs end
+        local services = knit:FindFirstChild("Services")
+        if not services then debugPrint("Services not found for inventory RFs") return rfs end
         for _, svc in ipairs(services:GetChildren()) do
             local RF = svc:FindFirstChild("RF")
             if RF then
@@ -399,6 +430,7 @@ Modules.Crates = (function()
                         for _, nm in ipairs(candidateRFNames) do
                             if lname:find(nm:lower()) then
                                 table.insert(rfs, rf)
+                                debugPrint("Found inventory RF: " .. rf.Name)
                                 break
                             end
                         end
@@ -452,12 +484,18 @@ Modules.Crates = (function()
     local function unlockWorker(ctx)
         while true do
             if cratesRE_UnlockFinish == nil or not cratesRE_UnlockFinish.Parent then
-                local pkg  = ctx.services.ReplicatedStorage:FindFirstChild("Packages") or ctx.services.ReplicatedStorage:WaitForChild("Packages")
-                local knit = pkg:FindFirstChild("Knit") or pkg:WaitForChild("Knit")
-                local svcs = knit:FindFirstChild("Services") or knit:WaitForChild("Services")
-                local svc  = svcs:FindFirstChild("CratesService") or svcs:WaitForChild("CratesService")
-                local RE   = svc:FindFirstChild("RE") or svcs:WaitForChild("RE")
-                cratesRE_UnlockFinish = RE and (RE:FindFirstChild("UnlockCratesFinished") or RE:WaitForChild("UnlockCratesFinished"))
+                local pkg = ctx.services.ReplicatedStorage:FindFirstChild("Packages")
+                if not pkg then debugPrint("Packages not found for unlockWorker") task.wait(1) continue end
+                local knit = pkg:FindFirstChild("Knit")
+                if not knit then debugPrint("Knit not found for unlockWorker") task.wait(1) continue end
+                local svcs = knit:FindFirstChild("Services")
+                if not svcs then debugPrint("Services not found for unlockWorker") task.wait(1) continue end
+                local svc = svcs:FindFirstChild("CratesService")
+                if not svc then debugPrint("CratesService not found for unlockWorker") task.wait(1) continue end
+                local RE = svc:FindFirstChild("RE")
+                if not RE then debugPrint("RE not found for unlockWorker") task.wait(1) continue end
+                cratesRE_UnlockFinish = RE:FindFirstChild("UnlockCratesFinished")
+                if not cratesRE_UnlockFinish then debugPrint("UnlockCratesFinished not found") task.wait(1) continue end
             end
             local id = table.remove(_G.unlockIdQueue, 1)
             if id then
@@ -523,24 +561,34 @@ Modules.Crates = (function()
             Utils.notify("🎁 Crates","Auto opening disabled.",3)
         end
     end
+    debugPrint("Crates module loaded")
     return Crates
 end)()
 
 -- Merchants.lua
 Modules.Merchants = (function()
     local Merchants = {}
-    local mythicSkus       = { "Mythic1", "Mythic2", "Mythic3", "Mythic4" }
+    local mythicSkus = { "Mythic1", "Mythic2", "Mythic3", "Mythic4" }
     local merchantCooldown = 0.1
     local M1_ON, M2_ON = false, false
     local function getMerchentBuyRemoteByService(ctx, serviceName)
         local RS = ctx.services.ReplicatedStorage
-        local packages = RS:FindFirstChild("Packages") or RS:WaitForChild("Packages", 5)
-        local knit     = packages and (packages:FindFirstChild("Knit") or packages:WaitForChild("Knit", 5))
-        local services = knit and (knit:FindFirstChild("Services") or knit:WaitForChild("Services", 5))
-        local svc      = services and (services:FindFirstChild(serviceName) or services:WaitForChild(serviceName, 5))
-        local rf       = svc and (svc:FindFirstChild("RF") or svc:WaitForChild("RF", 5))
-        local remote   = rf and (rf:FindFirstChild("MerchentBuy") or rf:WaitForChild("MerchentBuy", 5))
-        if remote and remote:IsA("RemoteFunction") then return remote end
+        local packages = RS:FindFirstChild("Packages")
+        if not packages then debugPrint("Packages not found for Merchants") return nil end
+        local knit = packages:FindFirstChild("Knit")
+        if not knit then debugPrint("Knit not found for Merchants") return nil end
+        local services = knit:FindFirstChild("Services")
+        if not services then debugPrint("Services not found for Merchants") return nil end
+        local svc = services:FindFirstChild(serviceName)
+        if not svc then debugPrint(serviceName .. " not found") return nil end
+        local rf = svc:FindFirstChild("RF")
+        if not rf then debugPrint("RF not found for " .. serviceName) return nil end
+        local remote = rf:FindFirstChild("MerchentBuy")
+        if remote and remote:IsA("RemoteFunction") then
+            debugPrint("Found MerchentBuy for " .. serviceName)
+            return remote
+        end
+        debugPrint("MerchentBuy not found for " .. serviceName)
         return nil
     end
     local function merchantResultOK(res)
@@ -628,6 +676,7 @@ Modules.Merchants = (function()
             Utils.notify("🌲 Merchant","Auto buy disabled for Bombardino Sewer",3)
         end
     end
+    debugPrint("Merchants module loaded")
     return Merchants
 end)()
 
@@ -733,6 +782,7 @@ Modules.Farm = (function()
             ui.refs.TargetLabel.Text = "Current Target: None"
         end
     end
+    debugPrint("Farm module loaded")
     return Farm
 end)()
 
@@ -842,6 +892,7 @@ Modules.AutoLevel = (function()
             ui.refs.TargetLabel.Text = "Current Target: None"
         end
     end
+    debugPrint("AutoLevel module loaded")
     return AutoLevel
 end)()
 
@@ -866,16 +917,24 @@ Modules.Hub = (function()
             },
             constants = {},
         }
-        local Utils     = Modules.Utils
-        local Remotes   = Modules.Remotes
-        local UI        = Modules.UI
-        local Farm      = Modules.Farm
+        local Utils = Modules.Utils
+        local Remotes = Modules.Remotes
+        local UI = Modules.UI
+        local Farm = Modules.Farm
         local AutoLevel = Modules.AutoLevel
-        local Crates    = Modules.Crates
+        local Crates = Modules.Crates
         local Merchants = Modules.Merchants
+        if not (Utils and Remotes and UI and Farm and AutoLevel and Crates and Merchants) then
+            debugPrint("One or more modules missing")
+            return
+        end
         local deps = { Utils = Utils, Remotes = Remotes }
         Utils.init(ctx)
         local ui = UI.mount(ctx, deps)
+        if not ui then
+            debugPrint("UI failed to mount")
+            return
+        end
         Remotes.init(ctx)
         Crates.init(ctx, ui, deps)
         Merchants.init(ctx, ui, deps)
@@ -912,9 +971,21 @@ Modules.Hub = (function()
             Merchants.setM2Enabled(on, ui)
         end)
         Utils.notify("🌲 WoodzHUB","Loaded modular build (Hub + modules).",6.5)
+        debugPrint("Hub started successfully")
     end
+    debugPrint("Hub module loaded")
     return Hub
 end)()
 
--- Main.client.lua equivalent
-Modules.Hub.start()
+-- Entry point with error handling
+if Modules.Hub then
+    debugPrint("Starting Hub")
+    local success, err = pcall(function()
+        Modules.Hub.start()
+    end)
+    if not success then
+        debugPrint("Error starting Hub: " .. tostring(err))
+    end
+else
+    debugPrint("Hub module not found")
+end
