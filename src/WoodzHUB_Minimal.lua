@@ -1,5 +1,5 @@
--- WoodzHUB_Minimal_UI.lua
--- Minimal script with Hub, Utils, and UI to debug 'Utils module missing' and 'attempt to call a nil value' errors
+-- WoodzHUB_Minimal_Remotes.lua
+-- Minimal script with Hub, Utils, UI, and Remotes to debug and extend functionality
 
 local function debugPrint(msg)
     print("[WoodzHUB Debug] " .. tostring(msg))
@@ -22,7 +22,7 @@ Modules.Utils = (function()
             COLOR_BTN = Color3.fromRGB(60, 60, 60),
             COLOR_BTN_ACTIVE = Color3.fromRGB(80, 80, 80),
             COLOR_WHITE = Color3.fromRGB(255, 255, 255),
-            SIZE_MAIN = UDim2.new(0, 200, 0, 100),
+            SIZE_MAIN = UDim2.new(0, 200, 0, 150),
         }
     end
     function Utils.new(t, props, parent)
@@ -78,6 +78,59 @@ Modules.Utils = (function()
     return Utils
 end)()
 
+-- Remotes.lua
+Modules.Remotes = (function()
+    debugPrint("Defining Remotes module")
+    local Remotes = {}
+    function Remotes.init(ctx)
+        debugPrint("Remotes.init called")
+        ctx.state.autoAttackRemote = nil
+        ctx.state.rebirthRemote = nil
+        for _, d in ipairs(ctx.services.ReplicatedStorage:GetDescendants()) do
+            if d:IsA("RemoteFunction") and d.Name:lower() == "autoattack" then
+                ctx.state.autoAttackRemote = d
+                debugPrint("Found autoAttackRemote: " .. d.Name)
+                break
+            end
+        end
+        for _, d in ipairs(ctx.services.ReplicatedStorage:GetDescendants()) do
+            local n = d.Name:lower()
+            if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and (n:find("rebirth") or n:find("servercontrol") or n:find("bosszoneremote")) then
+                ctx.state.rebirthRemote = d
+                debugPrint("Found rebirthRemote: " .. d.Name)
+                break
+            end
+        end
+        if not ctx.state.rebirthRemote then
+            debugPrint("No rebirthRemote found")
+        end
+    end
+    function Remotes.rebirth(ctx)
+        debugPrint("Remotes.rebirth called")
+        local r = ctx.state.rebirthRemote
+        if not r then
+            debugPrint("No rebirthRemote found for rebirth")
+            return false
+        end
+        local success, err = pcall(function()
+            if r:IsA("RemoteEvent") then
+                r:FireServer()
+            else
+                r:InvokeServer()
+            end
+        end)
+        if success then
+            debugPrint("Rebirth remote fired successfully")
+            return true
+        else
+            debugPrint("Error firing rebirth remote: " .. tostring(err))
+            return false
+        end
+    end
+    debugPrint("Remotes module defined")
+    return Remotes
+end)()
+
 -- UI.lua
 Modules.UI = (function()
     debugPrint("Defining UI module")
@@ -110,7 +163,7 @@ Modules.UI = (function()
         }, PlayerGui)
         local Main = Utils.new("Frame", {
             Size = C.SIZE_MAIN,
-            Position = UDim2.new(0.5, -100, 0.5, -50),
+            Position = UDim2.new(0.5, -100, 0.5, -75),
             BackgroundColor3 = C.COLOR_BG_DARK,
             BorderSizePixel = 0
         }, ScreenGui)
@@ -129,15 +182,28 @@ Modules.UI = (function()
             TextColor3 = C.COLOR_WHITE,
             Text = "Test Button"
         }, Main)
+        local RebirthButton = Utils.new("TextButton", {
+            Size = UDim2.new(1, -20, 0, 30),
+            Position = UDim2.new(0, 10, 0, 80),
+            BackgroundColor3 = C.COLOR_BTN,
+            TextColor3 = C.COLOR_WHITE,
+            Text = "Test Rebirth"
+        }, Main)
         local onTestToggle = Instance.new("BindableEvent")
+        local onRebirth = Instance.new("BindableEvent")
         TestButton.MouseButton1Click:Connect(function()
             debugPrint("Test button clicked")
             onTestToggle:Fire()
         end)
+        RebirthButton.MouseButton1Click:Connect(function()
+            debugPrint("Rebirth button clicked")
+            onRebirth:Fire()
+        end)
         debugPrint("UI mounted successfully")
         return {
-            refs = { TestButton = TestButton },
-            onTestToggle = onTestToggle
+            refs = { TestButton = TestButton, RebirthButton = RebirthButton },
+            onTestToggle = onTestToggle,
+            onRebirth = onRebirth
         }
     end
     debugPrint("UI module defined")
@@ -154,8 +220,12 @@ Modules.Hub = (function()
             services = {
                 Players = game:GetService("Players"),
                 StarterGui = game:GetService("StarterGui"),
+                ReplicatedStorage = game:GetService("ReplicatedStorage"),
             },
-            state = {},
+            state = {
+                autoAttackRemote = nil,
+                rebirthRemote = nil,
+            },
             constants = {},
         }
         local Utils = Modules.Utils
@@ -170,6 +240,12 @@ Modules.Hub = (function()
             debugPrint("UI module is nil in Hub.start")
             return
         end
+        local Remotes = Modules.Remotes
+        if not Remotes then
+            debugPrint("Remotes module is nil in Hub.start")
+            return
+        end
+        Remotes.init(ctx)
         local ui = UI.mount(ctx, deps)
         if not ui then
             debugPrint("UI.mount failed")
@@ -179,8 +255,13 @@ Modules.Hub = (function()
             debugPrint("Test toggle fired")
             Utils.notify("WoodzHUB", "Test button clicked!", 3)
         end)
-        Utils.notify("WoodzHUB", "Hub, Utils, and UI loaded successfully", 5)
-        debugPrint("Hub initialized with Utils and UI")
+        ui.onRebirth.Event:Connect(function()
+            debugPrint("Rebirth toggle fired")
+            local success = Remotes.rebirth(ctx)
+            Utils.notify("WoodzHUB", success and "Rebirth fired successfully" or "Rebirth failed (no remote?)", 3)
+        end)
+        Utils.notify("WoodzHUB", "Hub, Utils, UI, and Remotes loaded successfully", 5)
+        debugPrint("Hub initialized with Utils, UI, and Remotes")
     end
     debugPrint("Hub module defined")
     return Hub
