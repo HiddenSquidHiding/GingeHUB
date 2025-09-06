@@ -1,5 +1,5 @@
--- WoodzHUB_Minimal_Remotes.lua
--- Minimal script with Hub, Utils, UI, and Remotes to debug and extend functionality
+-- WoodzHUB_Minimal_Farm.lua
+-- Minimal script with Hub, Utils, UI, Remotes, and Farm to debug and extend functionality
 
 local function debugPrint(msg)
     print("[WoodzHUB Debug] " .. tostring(msg))
@@ -22,7 +22,7 @@ Modules.Utils = (function()
             COLOR_BTN = Color3.fromRGB(60, 60, 60),
             COLOR_BTN_ACTIVE = Color3.fromRGB(80, 80, 80),
             COLOR_WHITE = Color3.fromRGB(255, 255, 255),
-            SIZE_MAIN = UDim2.new(0, 200, 0, 150),
+            SIZE_MAIN = UDim2.new(0, 200, 0, 190),
         }
     end
     function Utils.new(t, props, parent)
@@ -74,6 +74,58 @@ Modules.Utils = (function()
         end)
         debugPrint("Notification GUI created")
     end
+    function Utils.waitForCharacter(player)
+        debugPrint("Utils.waitForCharacter called")
+        if not player then return end
+        while not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or not player.Character:FindFirstChild("Humanoid") do
+            player.CharacterAdded:Wait()
+            task.wait(0.1)
+        end
+        return player.Character
+    end
+    function Utils.isValidCFrame(cf)
+        debugPrint("Utils.isValidCFrame called")
+        if not cf then return false end
+        local p = cf.Position
+        return p.X == p.X and p.Y == p.Y and p.Z == p.Z
+           and math.abs(p.X) < 10000 and math.abs(p.Y) < 10000 and math.abs(p.Z) < 10000
+    end
+    function Utils.findBasePart(model)
+        debugPrint("Utils.findBasePart called for model: " .. tostring(model))
+        if not model then return nil end
+        local candidates = { "HumanoidRootPart", "PrimaryPart", "Body", "Hitbox", "Root", "Main" }
+        for _, n in ipairs(candidates) do
+            local part = model:FindFirstChild(n)
+            if part and part:IsA("BasePart") then return part end
+        end
+        for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("BasePart") then return d end
+        end
+        return nil
+    end
+    function Utils.searchFoldersList()
+        debugPrint("Utils.searchFoldersList called")
+        local Workspace = game:GetService("Workspace")
+        local list = {
+            Workspace:FindFirstChild("Monsters"),
+            Workspace:FindFirstChild("MiniBosses"),
+            Workspace:FindFirstChild("Enemies"),
+            Workspace:FindFirstChild("HideDuringEvent"),
+            Workspace:FindFirstChild("Titan"),
+        }
+        local world = Workspace:FindFirstChild("World")
+        if world then
+            local names = { "Nuclearo Core", "NuclearCore", "Core", "NuclearoCore", "nuclearo core" }
+            for _, nm in ipairs(names) do
+                local f = world:FindFirstChild(nm)
+                if f and f:FindFirstChild("Eatables") then
+                    table.insert(list, f.Eatables)
+                    break
+                end
+            end
+        end
+        return list
+    end
     debugPrint("Utils module defined")
     return Utils
 end)()
@@ -104,6 +156,15 @@ Modules.Remotes = (function()
         if not ctx.state.rebirthRemote then
             debugPrint("No rebirthRemote found")
         end
+    end
+    function Remotes.setAutoAttack(ctx, enabled)
+        debugPrint("Remotes.setAutoAttack called: " .. tostring(enabled))
+        local rf = ctx.state.autoAttackRemote
+        if not rf then
+            debugPrint("No autoAttackRemote found")
+            return
+        end
+        pcall(function() rf:InvokeServer(enabled and true or false) end)
     end
     function Remotes.rebirth(ctx)
         debugPrint("Remotes.rebirth called")
@@ -163,7 +224,7 @@ Modules.UI = (function()
         }, PlayerGui)
         local Main = Utils.new("Frame", {
             Size = C.SIZE_MAIN,
-            Position = UDim2.new(0.5, -100, 0.5, -75),
+            Position = UDim2.new(0.5, -100, 0.5, -95),
             BackgroundColor3 = C.COLOR_BG_DARK,
             BorderSizePixel = 0
         }, ScreenGui)
@@ -189,8 +250,16 @@ Modules.UI = (function()
             TextColor3 = C.COLOR_WHITE,
             Text = "Test Rebirth"
         }, Main)
+        local AutoFarmButton = Utils.new("TextButton", {
+            Size = UDim2.new(1, -20, 0, 30),
+            Position = UDim2.new(0, 10, 0, 120),
+            BackgroundColor3 = C.COLOR_BTN,
+            TextColor3 = C.COLOR_WHITE,
+            Text = "Auto-Farm: OFF"
+        }, Main)
         local onTestToggle = Instance.new("BindableEvent")
         local onRebirth = Instance.new("BindableEvent")
+        local onAutoFarmToggle = Instance.new("BindableEvent")
         TestButton.MouseButton1Click:Connect(function()
             debugPrint("Test button clicked")
             onTestToggle:Fire()
@@ -199,15 +268,139 @@ Modules.UI = (function()
             debugPrint("Rebirth button clicked")
             onRebirth:Fire()
         end)
+        AutoFarmButton.MouseButton1Click:Connect(function()
+            debugPrint("AutoFarm button clicked")
+            ctx.state.autoFarmEnabled = not ctx.state.autoFarmEnabled
+            AutoFarmButton.Text = "Auto-Farm: " .. (ctx.state.autoFarmEnabled and "ON" or "OFF")
+            AutoFarmButton.BackgroundColor3 = ctx.state.autoFarmEnabled and C.COLOR_BTN_ACTIVE or C.COLOR_BTN
+            onAutoFarmToggle:Fire(ctx.state.autoFarmEnabled)
+        end)
         debugPrint("UI mounted successfully")
         return {
-            refs = { TestButton = TestButton, RebirthButton = RebirthButton },
+            refs = { TestButton = TestButton, RebirthButton = RebirthButton, AutoFarmButton = AutoFarmButton },
             onTestToggle = onTestToggle,
-            onRebirth = onRebirth
+            onRebirth = onRebirth,
+            onAutoFarmToggle = onAutoFarmToggle,
+            setAutoFarm = function(on)
+                ctx.state.autoFarmEnabled = on
+                AutoFarmButton.Text = "Auto-Farm: " .. (on and "ON" or "OFF")
+                AutoFarmButton.BackgroundColor3 = on and C.COLOR_BTN_ACTIVE or C.COLOR_BTN
+            end
         }
     end
     debugPrint("UI module defined")
     return UI
+end)()
+
+-- Farm.lua
+Modules.Farm = (function()
+    debugPrint("Defining Farm module")
+    local Farm = {}
+    local running = false
+    local function refreshEnemyList(ctx)
+        debugPrint("Farm.refreshEnemyList called")
+        local Players = ctx.services.Players
+        local weatherEventModels = { "Chicleteira", "YONII", "GRAIPUS MEDUS", "Market Crate", "BOSS" }
+        local function isIn(list, lname)
+            for _, n in ipairs(list) do
+                if lname == n:lower() then return true end
+            end
+            return false
+        end
+        local weather, other = {}, {}
+        local function classify(node)
+            if node:IsA("Model") and not Players:GetPlayerFromCharacter(node) then
+                local h = node:FindFirstChildOfClass("Humanoid")
+                if h and h.Health > 0 then
+                    local lname = node.Name:lower()
+                    if isIn(weatherEventModels, lname) then
+                        table.insert(weather, node)
+                    else
+                        table.insert(other, node)
+                    end
+                end
+            end
+            for _, c in ipairs(node:GetChildren()) do classify(c) end
+        end
+        local Utils = Farm.deps.Utils
+        for _, folder in ipairs(Utils.searchFoldersList()) do
+            if folder then classify(folder) end
+        end
+        local out = {}
+        for _, e in ipairs(weather) do table.insert(out, e) end
+        for _, e in ipairs(other) do table.insert(out, e) end
+        return out
+    end
+    local function loop(ctx, ui, deps)
+        debugPrint("Farm.loop started")
+        local Utils, Remotes = deps.Utils, deps.Remotes
+        Remotes.setAutoAttack(ctx, true)
+        while running do
+            local player = ctx.services.Players.LocalPlayer
+            if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
+               or not player.Character:FindFirstChild("Humanoid")
+               or player.Character.Humanoid.Health <= 0 then
+                Utils.waitForCharacter(player)
+            end
+            local enemies = refreshEnemyList(ctx)
+            if #enemies == 0 then
+                debugPrint("No enemies found")
+                task.wait(0.5)
+                goto continue
+            end
+            for _, enemy in ipairs(enemies) do
+                if not running then break end
+                if not enemy or not enemy.Parent then goto continue end
+                local hum = enemy:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then goto continue end
+                debugPrint("Targeting enemy: " .. enemy.Name)
+                local part = Utils.findBasePart(enemy)
+                local targetCF = part and (part.CFrame * CFrame.new(0, 0, 5)) or (enemy:GetModelCFrame() * CFrame.new(0, 0, 5))
+                if not Utils.isValidCFrame(targetCF) then
+                    debugPrint("Invalid CFrame for enemy: " .. enemy.Name)
+                    goto continue
+                end
+                local okTeleport = pcall(function()
+                    player.Character.HumanoidRootPart.CFrame = targetCF
+                end)
+                if okTeleport then
+                    debugPrint("Teleported to enemy: " .. enemy.Name)
+                    local start = tick()
+                    while running and enemy.Parent and hum and hum.Health > 0 and (tick() - start) < 30 do
+                        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then hrp.CFrame = targetCF end
+                        task.wait(0.6)
+                    end
+                end
+                task.wait(0.25)
+                ::continue::
+            end
+            ::continue::
+            task.wait(0.5)
+        end
+        Remotes.setAutoAttack(ctx, false)
+        debugPrint("Farm.loop stopped")
+    end
+    function Farm.init(ctx, ui, deps)
+        debugPrint("Farm.init called")
+        Farm.ctx, Farm.ui, Farm.deps = ctx, ui, deps
+    end
+    function Farm.start()
+        if running then return end
+        debugPrint("Farm.start called")
+        running = true
+        local ctx, ui, deps = Farm.ctx, Farm.ui, Farm.deps
+        ctx.state.autoFarmEnabled = true
+        task.spawn(loop, ctx, ui, deps)
+    end
+    function Farm.stop()
+        if not running then return end
+        debugPrint("Farm.stop called")
+        running = false
+        Farm.ctx.state.autoFarmEnabled = false
+    end
+    debugPrint("Farm module defined")
+    return Farm
 end)()
 
 -- Hub.lua
@@ -221,10 +414,12 @@ Modules.Hub = (function()
                 Players = game:GetService("Players"),
                 StarterGui = game:GetService("StarterGui"),
                 ReplicatedStorage = game:GetService("ReplicatedStorage"),
+                Workspace = game:GetService("Workspace"),
             },
             state = {
                 autoAttackRemote = nil,
                 rebirthRemote = nil,
+                autoFarmEnabled = false,
             },
             constants = {},
         }
@@ -234,7 +429,7 @@ Modules.Hub = (function()
             return
         end
         Utils.init(ctx)
-        local deps = { Utils = Utils }
+        local deps = { Utils = Utils, Remotes = Modules.Remotes }
         local UI = Modules.UI
         if not UI then
             debugPrint("UI module is nil in Hub.start")
@@ -245,7 +440,13 @@ Modules.Hub = (function()
             debugPrint("Remotes module is nil in Hub.start")
             return
         end
+        local Farm = Modules.Farm
+        if not Farm then
+            debugPrint("Farm module is nil in Hub.start")
+            return
+        end
         Remotes.init(ctx)
+        Farm.init(ctx, nil, deps)
         local ui = UI.mount(ctx, deps)
         if not ui then
             debugPrint("UI.mount failed")
@@ -260,8 +461,18 @@ Modules.Hub = (function()
             local success = Remotes.rebirth(ctx)
             Utils.notify("WoodzHUB", success and "Rebirth fired successfully" or "Rebirth failed (no remote?)", 3)
         end)
-        Utils.notify("WoodzHUB", "Hub, Utils, UI, and Remotes loaded successfully", 5)
-        debugPrint("Hub initialized with Utils, UI, and Remotes")
+        ui.onAutoFarmToggle.Event:Connect(function(on)
+            debugPrint("AutoFarm toggle fired: " .. tostring(on))
+            if on then
+                Farm.start()
+                Utils.notify("WoodzHUB", "Auto-Farm enabled", 3)
+            else
+                Farm.stop()
+                Utils.notify("WoodzHUB", "Auto-Farm disabled", 3)
+            end
+        end)
+        Utils.notify("WoodzHUB", "Hub, Utils, UI, Remotes, and Farm loaded successfully", 5)
+        debugPrint("Hub initialized with Utils, UI, Remotes, and Farm")
     end
     debugPrint("Hub module defined")
     return Hub
