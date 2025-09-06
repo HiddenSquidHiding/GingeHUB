@@ -412,3 +412,87 @@ Modules.Hub = (function()
         }
         local Utils = Modules.Utils
         if not Utils then
+            debugPrint("Utils module is nil in Hub.start")
+            return
+        end
+        Utils.init(ctx)
+        local deps = { Utils = Utils, Remotes = Modules.Remotes }
+        local UI = Modules.UI
+        if not UI then
+            debugPrint("UI module is nil in Hub.start")
+            return
+        end
+        local Remotes = Modules.Remotes
+        if not Remotes then
+            debugPrint("Remotes module is nil in Hub.start")
+            return
+        end
+        local Farm = Modules.Farm
+        if not Farm then
+            debugPrint("Farm module is nil in Hub.start")
+            return
+        end
+        Remotes.init(ctx)
+        debugPrint("Calling Farm.init")
+        Farm.init(ctx, nil, deps)
+        local ui = UI.mount(ctx, deps)
+        if not ui then
+            debugPrint("UI.mount failed")
+            return
+        end
+        ui.onTestToggle.Event:Connect(function()
+            debugPrint("Test toggle fired")
+            Utils.notify("WoodzHUB", "Test button clicked!", 3)
+        end)
+        ui.onRebirth.Event:Connect(function()
+            debugPrint("Rebirth toggle fired")
+            local success = Remotes.rebirth(ctx)
+            Utils.notify("WoodzHUB", success and "Rebirth fired successfully" or "Rebirth failed (no remote?)", 3)
+        end)
+        ui.onAutoFarmToggle.Event:Connect(function(on)
+            debugPrint("AutoFarm toggle fired: " .. tostring(on))
+            if on then
+                debugPrint("Starting Farm from toggle")
+                Farm.start()
+                Utils.notify("WoodzHUB", "Auto-Farm enabled", 3)
+            else
+                debugPrint("Stopping Farm from toggle")
+                Farm.stop()
+                Utils.notify("WoodzHUB", "Auto-Farm disabled", 3)
+            end
+        end)
+        Utils.notify("WoodzHUB", "Hub, Utils, UI, Remotes, and Farm loaded successfully", 5)
+        debugPrint("Hub initialized with Utils, UI, Remotes, and Farm")
+    end
+    debugPrint("Hub module defined")
+    return Hub
+end)()
+
+debugPrint("Modules table created")
+
+-- Entry point with extra debugging
+debugPrint("Checking Modules table")
+if not Modules then
+    debugPrint("Modules table is nil")
+    return
+end
+debugPrint("Checking Hub module")
+if not Modules.Hub then
+    debugPrint("Hub module is nil")
+    return
+end
+debugPrint("Checking Hub.start function")
+if not Modules.Hub.start then
+    debugPrint("Hub.start function is nil")
+    return
+end
+debugPrint("Starting Hub")
+local success, err = pcall(function()
+    debugPrint("Executing Hub.start")
+    Modules.Hub.start()
+end)
+if success then
+    debugPrint("Hub.start executed successfully")
+else
+    debugPrint("Error in Hub.start: " .. tostring(err))
+end
