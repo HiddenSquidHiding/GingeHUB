@@ -74,6 +74,58 @@ Modules.Utils = (function()
         end)
         debugPrint("Notification GUI created")
     end
+    function Utils.waitForCharacter(player)
+        debugPrint("Utils.waitForCharacter called")
+        if not player then return end
+        while not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or not player.Character:FindFirstChild("Humanoid") do
+            player.CharacterAdded:Wait()
+            task.wait(0.1)
+        end
+        return player.Character
+    end
+    function Utils.isValidCFrame(cf)
+        debugPrint("Utils.isValidCFrame called")
+        if not cf then return false end
+        local p = cf.Position
+        return p.X == p.X and p.Y == p.Y and p.Z == p.Z
+           and math.abs(p.X) < 10000 and math.abs(p.Y) < 10000 and math.abs(p.Z) < 10000
+    end
+    function Utils.findBasePart(model)
+        debugPrint("Utils.findBasePart called for model: " .. tostring(model))
+        if not model then return nil end
+        local candidates = { "HumanoidRootPart", "PrimaryPart", "Body", "Hitbox", "Root", "Main" }
+        for _, n in ipairs(candidates) do
+            local part = model:FindFirstChild(n)
+            if part and part:IsA("BasePart") then return part end
+        end
+        for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("BasePart") then return d end
+        end
+        return nil
+    end
+    function Utils.searchFoldersList()
+        debugPrint("Utils.searchFoldersList called")
+        local Workspace = game:GetService("Workspace")
+        local list = {
+            Workspace:FindFirstChild("Monsters"),
+            Workspace:FindFirstChild("MiniBosses"),
+            Workspace:FindFirstChild("Enemies"),
+            Workspace:FindFirstChild("HideDuringEvent"),
+            Workspace:FindFirstChild("Titan"),
+        }
+        local world = Workspace:FindFirstChild("World")
+        if world then
+            local names = { "Nuclearo Core", "NuclearCore", "Core", "NuclearoCore", "nuclearo core" }
+            for _, nm in ipairs(names) do
+                local f = world:FindFirstChild(nm)
+                if f and f:FindFirstChild("Eatables") then
+                    table.insert(list, f.Eatables)
+                    break
+                end
+            end
+        end
+        return list
+    end
     debugPrint("Utils module defined")
     return Utils
 end)()
@@ -240,18 +292,91 @@ Modules.UI = (function()
     return UI
 end)()
 
--- Farm.lua (Simplified)
+-- Farm.lua (Full)
 Modules.Farm = (function()
     debugPrint("Defining Farm module")
     local Farm = {}
     local running = false
+    local function refreshEnemyList(ctx)
+        debugPrint("Farm.refreshEnemyList called")
+        local Players = ctx.services.Players
+        local weatherEventModels = { "Chicleteira", "YONII", "GRAIPUS MEDUS", "Market Crate", "BOSS" }
+        local function isIn(list, lname)
+            for _, n in ipairs(list) do
+                if lname == n:lower() then return true end
+            end
+            return false
+        end
+        local weather, other = {}, {}
+        local function classify(node)
+            if node:IsA("Model") and not Players:GetPlayerFromCharacter(node) then
+                local h = node:FindFirstChildOfClass("Humanoid")
+                if h and h.Health > 0 then
+                    local lname = node.Name:lower()
+                    if isIn(weatherEventModels, lname) then
+                        table.insert(weather, node)
+                    else
+                        table.insert(other, node)
+                    end
+                end
+            end
+            for _, c in ipairs(node:GetChildren()) do classify(c) end
+        end
+        local Utils = Farm.deps.Utils
+        for _, folder in ipairs(Utils.searchFoldersList()) do
+            if folder then classify(folder) end
+        end
+        local out = {}
+        for _, e in ipairs(weather) do table.insert(out, e) end
+        for _, e in ipairs(other) do table.insert(out, e) end
+        return out
+    end
     local function loop(ctx, ui, deps)
         debugPrint("Farm.loop started")
-        local Remotes = deps.Remotes
+        local Utils, Remotes = deps.Utils, deps.Remotes
         Remotes.setAutoAttack(ctx, true)
         while running do
-            debugPrint("Farm loop running")
-            task.wait(1) -- Placeholder loop to test stability
+            local player = ctx.services.Players.LocalPlayer
+            if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
+               or not player.Character:FindFirstChild("Humanoid")
+               or player.Character.Humanoid.Health <= 0 then
+                Utils.waitForCharacter(player)
+            end
+            local enemies = refreshEnemyList(ctx)
+            if #enemies == 0 then
+                debugPrint("No enemies found")
+                task.wait(0.5)
+                goto continue
+            end
+            for _, enemy in ipairs(enemies) do
+                if not running then break end
+                if not enemy or not enemy.Parent then goto continue end
+                local hum = enemy:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then goto continue end
+                debugPrint("Targeting enemy: " .. enemy.Name)
+                local part = Utils.findBasePart(enemy)
+                local targetCF = part and (part.CFrame * CFrame.new(0, 0, 5)) or (enemy:GetModelCFrame() * CFrame.new(0, 0, 5))
+                if not Utils.isValidCFrame(targetCF) then
+                    debugPrint("Invalid CFrame for enemy: " .. enemy.Name)
+                    goto continue
+                end
+                local okTeleport = pcall(function()
+                    player.Character.HumanoidRootPart.CFrame = targetCF
+                end)
+                if okTeleport then
+                    debugPrint("Teleported to enemy: " .. enemy.Name)
+                    local start = tick()
+                    while running and enemy.Parent and hum and hum.Health > 0 and (tick() - start) < 30 do
+                        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then hrp.CFrame = targetCF end
+                        task.wait(0.6)
+                    end
+                end
+                task.wait(0.25)
+                ::continue::
+            end
+            ::continue::
+            task.wait(0.5)
         end
         Remotes.setAutoAttack(ctx, false)
         debugPrint("Farm.loop stopped")
