@@ -1,5 +1,5 @@
--- WoodzHUB_Minimal_Remotes.lua
--- Minimal script with Hub, Utils, UI, and Remotes to debug functionality
+-- WoodzHUB_Minimal_Farm_Debug.lua
+-- Simplified script with extra debugging to pinpoint 'attempt to call a nil value' error
 
 local function debugPrint(msg)
     print("[WoodzHUB Debug] " .. tostring(msg))
@@ -22,7 +22,7 @@ Modules.Utils = (function()
             COLOR_BTN = Color3.fromRGB(60, 60, 60),
             COLOR_BTN_ACTIVE = Color3.fromRGB(80, 80, 80),
             COLOR_WHITE = Color3.fromRGB(255, 255, 255),
-            SIZE_MAIN = UDim2.new(0, 200, 0, 150),
+            SIZE_MAIN = UDim2.new(0, 200, 0, 190),
         }
     end
     function Utils.new(t, props, parent)
@@ -105,6 +105,15 @@ Modules.Remotes = (function()
             debugPrint("No rebirthRemote found")
         end
     end
+    function Remotes.setAutoAttack(ctx, enabled)
+        debugPrint("Remotes.setAutoAttack called: " .. tostring(enabled))
+        local rf = ctx.state.autoAttackRemote
+        if not rf then
+            debugPrint("No autoAttackRemote found")
+            return
+        end
+        pcall(function() rf:InvokeServer(enabled and true or false) end)
+    end
     function Remotes.rebirth(ctx)
         debugPrint("Remotes.rebirth called")
         local r = ctx.state.rebirthRemote
@@ -163,7 +172,7 @@ Modules.UI = (function()
         }, PlayerGui)
         local Main = Utils.new("Frame", {
             Size = C.SIZE_MAIN,
-            Position = UDim2.new(0.5, -100, 0.5, -75),
+            Position = UDim2.new(0.5, -100, 0.5, -95),
             BackgroundColor3 = C.COLOR_BG_DARK,
             BorderSizePixel = 0
         }, ScreenGui)
@@ -189,8 +198,16 @@ Modules.UI = (function()
             TextColor3 = C.COLOR_WHITE,
             Text = "Test Rebirth"
         }, Main)
+        local AutoFarmButton = Utils.new("TextButton", {
+            Size = UDim2.new(1, -20, 0, 30),
+            Position = UDim2.new(0, 10, 0, 120),
+            BackgroundColor3 = C.COLOR_BTN,
+            TextColor3 = C.COLOR_WHITE,
+            Text = "Auto-Farm: OFF"
+        }, Main)
         local onTestToggle = Instance.new("BindableEvent")
         local onRebirth = Instance.new("BindableEvent")
+        local onAutoFarmToggle = Instance.new("BindableEvent")
         TestButton.MouseButton1Click:Connect(function()
             debugPrint("Test button clicked")
             onTestToggle:Fire()
@@ -199,15 +216,81 @@ Modules.UI = (function()
             debugPrint("Rebirth button clicked")
             onRebirth:Fire()
         end)
+        AutoFarmButton.MouseButton1Click:Connect(function()
+            debugPrint("AutoFarm button clicked")
+            ctx.state.autoFarmEnabled = not ctx.state.autoFarmEnabled
+            AutoFarmButton.Text = "Auto-Farm: " .. (ctx.state.autoFarmEnabled and "ON" or "OFF")
+            AutoFarmButton.BackgroundColor3 = ctx.state.autoFarmEnabled and C.COLOR_BTN_ACTIVE or C.COLOR_BTN
+            onAutoFarmToggle:Fire(ctx.state.autoFarmEnabled)
+        end)
         debugPrint("UI mounted successfully")
         return {
-            refs = { TestButton = TestButton, RebirthButton = RebirthButton },
+            refs = { TestButton = TestButton, RebirthButton = RebirthButton, AutoFarmButton = AutoFarmButton },
             onTestToggle = onTestToggle,
-            onRebirth = onRebirth
+            onRebirth = onRebirth,
+            onAutoFarmToggle = onAutoFarmToggle,
+            setAutoFarm = function(on)
+                ctx.state.autoFarmEnabled = on
+                AutoFarmButton.Text = "Auto-Farm: " .. (on and "ON" or "OFF")
+                AutoFarmButton.BackgroundColor3 = on and C.COLOR_BTN_ACTIVE or C.COLOR_BTN
+            end
         }
     end
     debugPrint("UI module defined")
     return UI
+end)()
+
+-- Farm.lua (Simplified)
+Modules.Farm = (function()
+    debugPrint("Defining Farm module")
+    local Farm = {}
+    local running = false
+    local function loop(ctx, ui, deps)
+        debugPrint("Farm.loop started")
+        local Remotes = deps.Remotes
+        Remotes.setAutoAttack(ctx, true)
+        while running do
+            debugPrint("Farm loop running")
+            task.wait(1) -- Placeholder loop to test stability
+        end
+        Remotes.setAutoAttack(ctx, false)
+        debugPrint("Farm.loop stopped")
+    end
+    function Farm.init(ctx, ui, deps)
+        debugPrint("Farm.init called")
+        Farm.ctx, Farm.ui, Farm.deps = ctx, ui, deps
+    end
+    function Farm.start()
+        debugPrint("Farm.start called")
+        if running then
+            debugPrint("Farm already running")
+            return
+        end
+        running = true
+        local ctx, ui, deps = Farm.ctx, Farm.ui, Farm.deps
+        if not ctx or not deps then
+            debugPrint("Farm.start failed: ctx or deps nil")
+            running = false
+            return
+        end
+        ctx.state.autoFarmEnabled = true
+        task.spawn(loop, ctx, ui, deps)
+    end
+    function Farm.stop()
+        debugPrint("Farm.stop called")
+        if not running then
+            debugPrint("Farm not running")
+            return
+        end
+        running = false
+        if Farm.ctx then
+            Farm.ctx.state.autoFarmEnabled = false
+        else
+            debugPrint("Farm.stop failed: ctx nil")
+        end
+    end
+    debugPrint("Farm module defined")
+    return Farm
 end)()
 
 -- Hub.lua
@@ -225,6 +308,7 @@ Modules.Hub = (function()
             state = {
                 autoAttackRemote = nil,
                 rebirthRemote = nil,
+                autoFarmEnabled = false,
             },
             constants = {},
         }
@@ -234,7 +318,7 @@ Modules.Hub = (function()
             return
         end
         Utils.init(ctx)
-        local deps = { Utils = Utils }
+        local deps = { Utils = Utils, Remotes = Modules.Remotes }
         local UI = Modules.UI
         if not UI then
             debugPrint("UI module is nil in Hub.start")
@@ -245,7 +329,14 @@ Modules.Hub = (function()
             debugPrint("Remotes module is nil in Hub.start")
             return
         end
+        local Farm = Modules.Farm
+        if not Farm then
+            debugPrint("Farm module is nil in Hub.start")
+            return
+        end
         Remotes.init(ctx)
+        debugPrint("Calling Farm.init")
+        Farm.init(ctx, nil, deps)
         local ui = UI.mount(ctx, deps)
         if not ui then
             debugPrint("UI.mount failed")
@@ -260,8 +351,20 @@ Modules.Hub = (function()
             local success = Remotes.rebirth(ctx)
             Utils.notify("WoodzHUB", success and "Rebirth fired successfully" or "Rebirth failed (no remote?)", 3)
         end)
-        Utils.notify("WoodzHUB", "Hub, Utils, UI, and Remotes loaded successfully", 5)
-        debugPrint("Hub initialized with Utils, UI, and Remotes")
+        ui.onAutoFarmToggle.Event:Connect(function(on)
+            debugPrint("AutoFarm toggle fired: " .. tostring(on))
+            if on then
+                debugPrint("Starting Farm from toggle")
+                Farm.start()
+                Utils.notify("WoodzHUB", "Auto-Farm enabled", 3)
+            else
+                debugPrint("Stopping Farm from toggle")
+                Farm.stop()
+                Utils.notify("WoodzHUB", "Auto-Farm disabled", 3)
+            end
+        end)
+        Utils.notify("WoodzHUB", "Hub, Utils, UI, Remotes, and Farm loaded successfully", 5)
+        debugPrint("Hub initialized with Utils, UI, Remotes, and Farm")
     end
     debugPrint("Hub module defined")
     return Hub
@@ -269,21 +372,29 @@ end)()
 
 debugPrint("Modules table created")
 
--- Entry point
+-- Entry point with extra debugging
+debugPrint("Checking Modules table")
 if not Modules then
     debugPrint("Modules table is nil")
-elseif not Modules.Hub then
+    return
+end
+debugPrint("Checking Hub module")
+if not Modules.Hub then
     debugPrint("Hub module is nil")
-elseif not Modules.Hub.start then
+    return
+end
+debugPrint("Checking Hub.start function")
+if not Modules.Hub.start then
     debugPrint("Hub.start function is nil")
+    return
+end
+debugPrint("Starting Hub")
+local success, err = pcall(function()
+    debugPrint("Executing Hub.start")
+    Modules.Hub.start()
+end)
+if success then
+    debugPrint("Hub.start executed successfully")
 else
-    debugPrint("Starting Hub")
-    local success, err = pcall(function()
-        Modules.Hub.start()
-    end)
-    if success then
-        debugPrint("Hub.start executed successfully")
-    else
-        debugPrint("Error in Hub.start: " .. tostring(err))
-    end
+    debugPrint("Error in Hub.start: " .. tostring(err))
 end
