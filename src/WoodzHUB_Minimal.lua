@@ -297,39 +297,96 @@ Modules.Farm = (function()
     debugPrint("Defining Farm module")
     local Farm = {}
     local running = false
-    local function loop(ctx, ui, deps)
-        debugPrint("Farm.loop started")
-        local Utils, Remotes = deps.Utils, deps.Remotes
-        Remotes.setAutoAttack(ctx, true)
-        while running do
-            local player = ctx.services.Players.LocalPlayer
-            if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
-                or not player.Character:FindFirstChild("Humanoid")
-                or player.Character.Humanoid.Health <= 0 then
-                debugPrint("Waiting for character")
-                Utils.waitForCharacter(player)
+    local function refreshEnemyList(ctx)
+    debugPrint("Farm.refreshEnemyList called")
+    local Players = ctx.services.Players
+    local weatherEventModels = { "Chicleteira", "YONII", "GRAIPUS MEDUS", "Market Crate", "BOSS" }
+    local function isIn(list, lname)
+        for _, n in ipairs(list) do
+            if lname == n:lower() then return true end
+        end
+        return false
+    end
+    local weather, other = {}, {}
+    local function classify(node)
+        if node:IsA("Model") and not Players:GetPlayerFromCharacter(node) then
+            local h = node:FindFirstChildOfClass("Humanoid")
+            if h and h.Health > 0 then
+                local lname = node.Name:lower()
+                if isIn(weatherEventModels, lname) then
+                    table.insert(weather, node)
+                else
+                    table.insert(other, node)
+                end
+            end
+        end
+        for _, c in ipairs(node:GetChildren()) do classify(c) end
+    end
+    local Utils = Farm.deps.Utils
+    for _, folder in ipairs(Utils.searchFoldersList()) do
+        if folder then classify(folder) end
+    end
+    local out = {}
+    for _, e in ipairs(weather) do table.insert(out, e) end
+    for _, e in ipairs(other) do table.insert(out, e) end
+    return out
+end
+local function loop(ctx, ui, deps)
+    debugPrint("Farm.loop started")
+    local Utils, Remotes = deps.Utils, deps.Remotes
+    Remotes.setAutoAttack(ctx, true)
+    while running do
+        local player = ctx.services.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
+            or not player.Character:FindFirstChild("Humanoid")
+            or player.Character.Humanoid.Health <= 0 then
+            debugPrint("Waiting for character")
+            Utils.waitForCharacter(player)
+        end
+        local enemies = refreshEnemyList(ctx)
+        if #enemies == 0 then
+            debugPrint("No enemies found")
+            Utils.notify("WoodzHUB", "No enemies found", 3)
+            task.wait(0.5)
+            goto continue
+        end
+        for _, enemy in ipairs(enemies) do
+            if not running then break end
+            if not enemy or not enemy.Parent then goto continue end
+            local hum = enemy:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then goto continue end
+            debugPrint("Targeting enemy: " .. enemy.Name)
+            local part = Utils.findBasePart(enemy)
+            local targetCF = part and (part.CFrame * CFrame.new(0, 0, 5)) or (enemy:GetModelCFrame() * CFrame.new(0, 0, 5))
+            if not Utils.isValidCFrame(targetCF) then
+                debugPrint("Invalid CFrame for enemy: " .. enemy.Name)
+                goto continue
             end
             local okTeleport, err = pcall(function()
-                local hrp = player.Character.HumanoidRootPart
-                local targetCF = CFrame.new(0, 5, 0) -- Fixed position for testing
-                if Utils.isValidCFrame(targetCF) then
-                    hrp.CFrame = targetCF
-                    debugPrint("Teleported to fixed position (0, 5, 0)")
-                    Utils.notify("WoodzHUB", "Teleported to (0, 5, 0)", 3)
-                else
-                    debugPrint("Invalid CFrame for teleport")
-                    Utils.notify("WoodzHUB", "Invalid teleport position", 3)
-                end
+                player.Character.HumanoidRootPart.CFrame = targetCF
             end)
-            if not okTeleport then
-                debugPrint("Teleport failed: " .. tostring(err))
+            if okTeleport then
+                debugPrint("Teleported to enemy: " .. enemy.Name)
+                Utils.notify("WoodzHUB", "Teleported to " .. enemy.Name, 3)
+                local start = tick()
+                while running and enemy.Parent and hum and hum.Health > 0 and (tick() - start) < 30 do
+                    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then hrp.CFrame = targetCF end
+                    task.wait(0.6)
+                end
+            else
+                debugPrint("Teleport failed for enemy " .. enemy.Name .. ": " .. tostring(err))
                 Utils.notify("WoodzHUB", "Teleport failed: " .. tostring(err), 3)
             end
-            task.wait(1)
+            task.wait(0.25)
+            ::continue::
         end
-        Remotes.setAutoAttack(ctx, false)
-        debugPrint("Farm.loop stopped")
+        ::continue::
+        task.wait(0.5)
     end
+    Remotes.setAutoAttack(ctx, false)
+    debugPrint("Farm.loop stopped")
+end
     function Farm.init(ctx, ui, deps)
         debugPrint("Farm.init called")
         Farm.ctx, Farm.ui, Farm.deps = ctx, ui, deps
