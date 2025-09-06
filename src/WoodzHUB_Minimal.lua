@@ -15,7 +15,6 @@ Modules.Hub = (function()
     local Hub = {}
     function Hub.start(config)
         debugPrint("Hub.start called")
-        -- Minimal context for testing
         local ctx = {
             services = {
                 Players = game:GetService("Players"),
@@ -24,8 +23,14 @@ Modules.Hub = (function()
             state = {},
             constants = {},
         }
-        debugPrint("Hub initialized context")
-        -- Simple notification to confirm execution
+        local Utils = Modules.Utils
+        if not Utils then
+            debugPrint("Utils module missing")
+            return
+        end
+        Utils.init(ctx)
+        debugPrint("Hub initialized context with Utils")
+        -- Same GUI code as before
         local PlayerGui = ctx.services.Players.LocalPlayer:WaitForChild("PlayerGui", 5)
         if PlayerGui then
             local ScreenGui = Instance.new("ScreenGui", PlayerGui)
@@ -38,6 +43,7 @@ Modules.Hub = (function()
             Label.Size = UDim2.new(1, 0, 1, 0)
             Label.Text = "WoodzHUB Loaded"
             Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Utils.notify("Test", "Utils loaded successfully", 5)
             debugPrint("Test GUI created")
         else
             debugPrint("PlayerGui not found")
