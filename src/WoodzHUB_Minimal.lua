@@ -1,5 +1,5 @@
--- WoodzHUB_Minimal_Utils.lua
--- Minimal script to debug 'Utils module missing' and 'attempt to call a nil value' errors
+-- WoodzHUB_Minimal_UI.lua
+-- Minimal script with Hub, Utils, and UI to debug 'Utils module missing' and 'attempt to call a nil value' errors
 
 local function debugPrint(msg)
     print("[WoodzHUB Debug] " .. tostring(msg))
@@ -18,9 +18,25 @@ Modules.Utils = (function()
         debugPrint("Utils.init called")
         ctx.constants = {
             COLOR_BG_DARK = Color3.fromRGB(30, 30, 30),
+            COLOR_BG = Color3.fromRGB(40, 40, 40),
+            COLOR_BTN = Color3.fromRGB(60, 60, 60),
+            COLOR_BTN_ACTIVE = Color3.fromRGB(80, 80, 80),
             COLOR_WHITE = Color3.fromRGB(255, 255, 255),
-            SIZE_MAIN = UDim2.new(0, 200, 0, 50),
+            SIZE_MAIN = UDim2.new(0, 200, 0, 100),
         }
+    end
+    function Utils.new(t, props, parent)
+        debugPrint("Utils.new called for type: " .. tostring(t))
+        local i = Instance.new(t)
+        if props then
+            for k, v in pairs(props) do
+                i[k] = v
+            end
+        end
+        if parent then
+            i.Parent = parent
+        end
+        return i
     end
     function Utils.notify(title, content, duration)
         debugPrint("Utils.notify called: " .. title)
@@ -35,20 +51,23 @@ Modules.Utils = (function()
             debugPrint("PlayerGui not found")
             return
         end
-        local gui = Instance.new("ScreenGui", PlayerGui)
-        gui.ResetOnSpawn = false
-        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-        gui.DisplayOrder = 2000000000
-        local frame = Instance.new("Frame", gui)
-        frame.Size = UDim2.new(0, 200, 0, 50)
-        frame.Position = UDim2.new(0.5, -100, 0.5, -25)
-        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        local label = Instance.new("TextLabel", frame)
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.Text = title .. ": " .. content
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        label.TextSize = 14
-        label.Font = Enum.Font.SourceSans
+        local gui = Utils.new("ScreenGui", {
+            ResetOnSpawn = false,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+            DisplayOrder = 2000000000
+        }, PlayerGui)
+        local frame = Utils.new("Frame", {
+            Size = UDim2.new(0, 200, 0, 50),
+            Position = UDim2.new(0.5, -100, 0.5, -25),
+            BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        }, gui)
+        Utils.new("TextLabel", {
+            Size = UDim2.new(1, 0, 1, 0),
+            Text = title .. ": " .. content,
+            TextColor3 = Color3.fromRGB(255, 255, 255),
+            TextSize = 14,
+            Font = Enum.Font.SourceSans
+        }, frame)
         task.spawn(function()
             task.wait(duration or 5)
             gui:Destroy()
@@ -57,6 +76,72 @@ Modules.Utils = (function()
     end
     debugPrint("Utils module defined")
     return Utils
+end)()
+
+-- UI.lua
+Modules.UI = (function()
+    debugPrint("Defining UI module")
+    local UI = {}
+    function UI.mount(ctx, deps)
+        debugPrint("UI.mount called")
+        local Utils = deps.Utils
+        if not Utils then
+            debugPrint("Utils is nil in UI.mount")
+            return nil
+        end
+        local Players = ctx.services.Players
+        local player = Players.LocalPlayer
+        if not player then
+            debugPrint("No LocalPlayer for UI")
+            return nil
+        end
+        local PlayerGui = player:WaitForChild("PlayerGui", 5)
+        if not PlayerGui then
+            debugPrint("PlayerGui not found for UI")
+            return nil
+        end
+        local C = ctx.constants
+        local ScreenGui = Utils.new("ScreenGui", {
+            Name = "WoodzHUB",
+            ResetOnSpawn = false,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+            DisplayOrder = 2000000000,
+            IgnoreGuiInset = false
+        }, PlayerGui)
+        local Main = Utils.new("Frame", {
+            Size = C.SIZE_MAIN,
+            Position = UDim2.new(0.5, -100, 0.5, -50),
+            BackgroundColor3 = C.COLOR_BG_DARK,
+            BorderSizePixel = 0
+        }, ScreenGui)
+        Utils.new("TextLabel", {
+            Size = UDim2.new(1, 0, 0, 30),
+            BackgroundColor3 = C.COLOR_BG,
+            Text = "🌲 WoodzHUB Test",
+            TextColor3 = C.COLOR_WHITE,
+            TextSize = 14,
+            Font = Enum.Font.SourceSansBold
+        }, Main)
+        local TestButton = Utils.new("TextButton", {
+            Size = UDim2.new(1, -20, 0, 30),
+            Position = UDim2.new(0, 10, 0, 40),
+            BackgroundColor3 = C.COLOR_BTN,
+            TextColor3 = C.COLOR_WHITE,
+            Text = "Test Button"
+        }, Main)
+        local onTestToggle = Instance.new("BindableEvent")
+        TestButton.MouseButton1Click:Connect(function()
+            debugPrint("Test button clicked")
+            onTestToggle:Fire()
+        end)
+        debugPrint("UI mounted successfully")
+        return {
+            refs = { TestButton = TestButton },
+            onTestToggle = onTestToggle
+        }
+    end
+    debugPrint("UI module defined")
+    return UI
 end)()
 
 -- Hub.lua
@@ -79,8 +164,23 @@ Modules.Hub = (function()
             return
         end
         Utils.init(ctx)
-        Utils.notify("WoodzHUB", "Hub and Utils loaded successfully", 5)
-        debugPrint("Hub initialized with Utils")
+        local deps = { Utils = Utils }
+        local UI = Modules.UI
+        if not UI then
+            debugPrint("UI module is nil in Hub.start")
+            return
+        end
+        local ui = UI.mount(ctx, deps)
+        if not ui then
+            debugPrint("UI.mount failed")
+            return
+        end
+        ui.onTestToggle.Event:Connect(function()
+            debugPrint("Test toggle fired")
+            Utils.notify("WoodzHUB", "Test button clicked!", 3)
+        end)
+        Utils.notify("WoodzHUB", "Hub, Utils, and UI loaded successfully", 5)
+        debugPrint("Hub initialized with Utils and UI")
     end
     debugPrint("Hub module defined")
     return Hub
