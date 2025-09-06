@@ -1,5 +1,5 @@
--- WoodzHUB_Minimal_Farm_SimplifiedFull.lua
--- Simplified full Farm module to debug 'attempt to call a nil value' error
+-- WoodzHUB_Minimal_Farm_MinimalTeleport.lua
+-- Script with minimal teleportation to debug 'attempt to call a nil value' error
 
 local function debugPrint(msg)
     print("[WoodzHUB Debug] " .. tostring(msg))
@@ -292,97 +292,80 @@ Modules.UI = (function()
     return UI
 end)()
 
--- Farm.lua (Simplified Full)
+-- Farm.lua (Minimal Teleportation)
 Modules.Farm = (function()
     debugPrint("Defining Farm module")
     local Farm = {}
     local running = false
-    local function refreshEnemyList(ctx)
-        debugPrint("Farm.refreshEnemyList called")
-        local Players = ctx.services.Players
-        local weatherEventModels = { "Chicleteira", "YONII", "GRAIPUS MEDUS", "Market Crate", "BOSS" }
-        local function isIn(list, lname)
-            for _, n in ipairs(list) do
-                if lname == n:lower() then return true end
-            end
-            return false
-        end
-        local weather, other = {}, {}
-        local function classify(node)
-            if node:IsA("Model") and not Players:GetPlayerFromCharacter(node) then
-                local h = node:FindFirstChildOfClass("Humanoid")
-                if h and h.Health > 0 then
-                    local lname = node.Name:lower()
-                    if isIn(weatherEventModels, lname) then
-                        table.insert(weather, node)
-                    else
-                        table.insert(other, node)
-                    end
-                end
-            end
-            for _, c in ipairs(node:GetChildren()) do classify(c) end
-        end
-        local Utils = Farm.deps.Utils
-        for _, folder in ipairs(Utils.searchFoldersList()) do
-            if folder then classify(folder) end
-        end
-        local out = {}
-        for _, e in ipairs(weather) do table.insert(out, e) end
-        for _, e in ipairs(other) do table.insert(out, e) end
-        return out
-    end
     local function loop(ctx, ui, deps)
-    debugPrint("Farm.loop started")
-    local Utils, Remotes = deps.Utils, deps.Remotes
-    Remotes.setAutoAttack(ctx, true)
-    while running do
-        local player = ctx.services.Players.LocalPlayer
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
-            or not player.Character:FindFirstChild("Humanoid")
-            or player.Character.Humanoid.Health <= 0 then
-            Utils.waitForCharacter(player)
-        end
-        local enemies = refreshEnemyList(ctx)
-        if #enemies == 0 then
-            debugPrint("No enemies found")
-            Utils.notify("WoodzHUB", "No enemies found", 3)
-            task.wait(0.5)
-            goto continue
-        end
-        for _, enemy in ipairs(enemies) do
-            if not running then break end
-            if not enemy or not enemy.Parent then goto continue end
-            local hum = enemy:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health <= 0 then goto continue end
-            debugPrint("Targeting enemy: " .. enemy.Name)
-            local part = Utils.findBasePart(enemy)
-            local targetCF = part and (part.CFrame * CFrame.new(0, 0, 5)) or (enemy:GetModelCFrame() * CFrame.new(0, 0, 5))
-            if not Utils.isValidCFrame(targetCF) then
-                debugPrint("Invalid CFrame for enemy: " .. enemy.Name)
-                goto continue
+        debugPrint("Farm.loop started")
+        local Utils, Remotes = deps.Utils, deps.Remotes
+        Remotes.setAutoAttack(ctx, true)
+        while running do
+            local player = ctx.services.Players.LocalPlayer
+            if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
+                or not player.Character:FindFirstChild("Humanoid")
+                or player.Character.Humanoid.Health <= 0 then
+                debugPrint("Waiting for character")
+                Utils.waitForCharacter(player)
             end
-            local okTeleport = pcall(function()
-                player.Character.HumanoidRootPart.CFrame = targetCF
-            end)
-            if okTeleport then
-                debugPrint("Teleported to enemy: " .. enemy.Name)
-                Utils.notify("WoodzHUB", "Teleported to " .. enemy.Name, 3)
-                local start = tick()
-                while running and enemy.Parent and hum and hum.Health > 0 and (tick() - start) < 30 do
-                    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp then hrp.CFrame = targetCF end
-                    task.wait(0.6)
+            local okTeleport, err = pcall(function()
+                local hrp = player.Character.HumanoidRootPart
+                local targetCF = CFrame.new(0, 5, 0) -- Fixed position for testing
+                if Utils.isValidCFrame(targetCF) then
+                    hrp.CFrame = targetCF
+                    debugPrint("Teleported to fixed position (0, 5, 0)")
+                    Utils.notify("WoodzHUB", "Teleported to (0, 5, 0)", 3)
+                else
+                    debugPrint("Invalid CFrame for teleport")
+                    Utils.notify("WoodzHUB", "Invalid teleport position", 3)
                 end
+            end)
+            if not okTeleport then
+                debugPrint("Teleport failed: " .. tostring(err))
+                Utils.notify("WoodzHUB", "Teleport failed: " .. tostring(err), 3)
             end
-            task.wait(0.25)
-            ::continue::
+            task.wait(1)
         end
-        ::continue::
-        task.wait(0.5)
+        Remotes.setAutoAttack(ctx, false)
+        debugPrint("Farm.loop stopped")
     end
-    Remotes.setAutoAttack(ctx, false)
-    debugPrint("Farm.loop stopped")
-end
+    function Farm.init(ctx, ui, deps)
+        debugPrint("Farm.init called")
+        Farm.ctx, Farm.ui, Farm.deps = ctx, ui, deps
+    end
+    function Farm.start()
+        debugPrint("Farm.start called")
+        if running then
+            debugPrint("Farm already running")
+            return
+        end
+        running = true
+        local ctx, ui, deps = Farm.ctx, Farm.ui, Farm.deps
+        if not ctx or not deps then
+            debugPrint("Farm.start failed: ctx or deps nil")
+            running = false
+            return
+        end
+        ctx.state.autoFarmEnabled = true
+        task.spawn(loop, ctx, ui, deps)
+    end
+    function Farm.stop()
+        debugPrint("Farm.stop called")
+        if not running then
+            debugPrint("Farm not running")
+            return
+        end
+        running = false
+        if Farm.ctx then
+            Farm.ctx.state.autoFarmEnabled = false
+        else
+            debugPrint("Farm.stop failed: ctx nil")
+        end
+    end
+    debugPrint("Farm module defined")
+    return Farm
+end)()
 
 -- Hub.lua
 Modules.Hub = (function()
