@@ -332,63 +332,57 @@ Modules.Farm = (function()
         return out
     end
     local function loop(ctx, ui, deps)
-        debugPrint("Farm.loop started")
-        local Utils, Remotes = deps.Utils, deps.Remotes
-        Remotes.setAutoAttack(ctx, true)
-        while running do
-            local enemies = refreshEnemyList(ctx)
-            if #enemies == 0 then
-                debugPrint("No enemies found")
-                Utils.notify("WoodzHUB", "No enemies found", 3)
-            else
-                debugPrint("Found " .. #enemies .. " enemies")
-                local enemyNames = {}
-                for _, enemy in ipairs(enemies) do
-                    table.insert(enemyNames, enemy.Name)
-                end
-                Utils.notify("WoodzHUB", "Found " .. #enemies .. " enemies: " .. table.concat(enemyNames, ", "), 5)
+    debugPrint("Farm.loop started")
+    local Utils, Remotes = deps.Utils, deps.Remotes
+    Remotes.setAutoAttack(ctx, true)
+    while running do
+        local player = ctx.services.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart")
+            or not player.Character:FindFirstChild("Humanoid")
+            or player.Character.Humanoid.Health <= 0 then
+            Utils.waitForCharacter(player)
+        end
+        local enemies = refreshEnemyList(ctx)
+        if #enemies == 0 then
+            debugPrint("No enemies found")
+            Utils.notify("WoodzHUB", "No enemies found", 3)
+            task.wait(0.5)
+            goto continue
+        end
+        for _, enemy in ipairs(enemies) do
+            if not running then break end
+            if not enemy or not enemy.Parent then goto continue end
+            local hum = enemy:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then goto continue end
+            debugPrint("Targeting enemy: " .. enemy.Name)
+            local part = Utils.findBasePart(enemy)
+            local targetCF = part and (part.CFrame * CFrame.new(0, 0, 5)) or (enemy:GetModelCFrame() * CFrame.new(0, 0, 5))
+            if not Utils.isValidCFrame(targetCF) then
+                debugPrint("Invalid CFrame for enemy: " .. enemy.Name)
+                goto continue
             end
-            task.wait(1)
+            local okTeleport = pcall(function()
+                player.Character.HumanoidRootPart.CFrame = targetCF
+            end)
+            if okTeleport then
+                debugPrint("Teleported to enemy: " .. enemy.Name)
+                Utils.notify("WoodzHUB", "Teleported to " .. enemy.Name, 3)
+                local start = tick()
+                while running and enemy.Parent and hum and hum.Health > 0 and (tick() - start) < 30 do
+                    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then hrp.CFrame = targetCF end
+                    task.wait(0.6)
+                end
+            end
+            task.wait(0.25)
+            ::continue::
         end
-        Remotes.setAutoAttack(ctx, false)
-        debugPrint("Farm.loop stopped")
+        ::continue::
+        task.wait(0.5)
     end
-    function Farm.init(ctx, ui, deps)
-        debugPrint("Farm.init called")
-        Farm.ctx, Farm.ui, Farm.deps = ctx, ui, deps
-    end
-    function Farm.start()
-        debugPrint("Farm.start called")
-        if running then
-            debugPrint("Farm already running")
-            return
-        end
-        running = true
-        local ctx, ui, deps = Farm.ctx, Farm.ui, Farm.deps
-        if not ctx or not deps then
-            debugPrint("Farm.start failed: ctx or deps nil")
-            running = false
-            return
-        end
-        ctx.state.autoFarmEnabled = true
-        task.spawn(loop, ctx, ui, deps)
-    end
-    function Farm.stop()
-        debugPrint("Farm.stop called")
-        if not running then
-            debugPrint("Farm not running")
-            return
-        end
-        running = false
-        if Farm.ctx then
-            Farm.ctx.state.autoFarmEnabled = false
-        else
-            debugPrint("Farm.stop failed: ctx nil")
-        end
-    end
-    debugPrint("Farm module defined")
-    return Farm
-end)()
+    Remotes.setAutoAttack(ctx, false)
+    debugPrint("Farm.loop stopped")
+end
 
 -- Hub.lua
 Modules.Hub = (function()
